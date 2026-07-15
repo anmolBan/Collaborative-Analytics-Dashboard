@@ -11,3 +11,210 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum WidgetType {
+  METRIC_CARD
+  METRIC_CHART
+  KPI_CARD
+  ANOMALY_LIST
+}
+
+enum MetricKey {
+  PAGE_VIEWS
+  CLICKS
+  ERRORS
+  REVENUE
+  USERS
+}
+
+enum KpiKey {
+  ARPU
+  ERROR_RATE
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(VIEWER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships TeamMembership[]
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teams Team[]
+}
+
+model Team {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships   TeamMembership[]
+  dashboards    Dashboard[]
+  metrics       Metric[]
+  kpis          KpiDefinition[]
+  anomalyRules  AnomalyRule[]
+  anomalyAlerts AnomalyAlert[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model TeamMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  teamId    String
+  role      Role     @default(VIEWER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@index([teamId])
+}
+
+model Dashboard {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  teamId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team    Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  widgets DashboardWidget[]
+
+  @@index([teamId])
+}
+
+model DashboardWidget {
+  id          String     @id @default(cuid())
+  dashboardId String
+  type        WidgetType
+  position    Int
+  config      Json
+  x           Int
+  y           Int
+  height      Int
+  width       Int
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId])
+}
+
+model Metric {
+  id        String    @id @default(cuid())
+  teamId    String
+  key       MetricKey
+  label     String
+  value     Float
+  unit      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  samples       MetricSample[]
+  anomalyRules  AnomalyRule[]
+  anomalyAlerts AnomalyAlert[]
+
+  @@unique([teamId, key])
+  @@index([teamId])
+}
+
+model MetricSample {
+  id        String   @id @default(cuid())
+  metricId  String
+  value     Float
+  timestamp DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  metric Metric @relation(fields: [metricId], references: [id], onDelete: Cascade)
+
+  @@index([metricId, timestamp])
+}
+
+model KpiDefinition {
+  id        String   @id @default(cuid())
+  teamId    String
+  key       KpiKey
+  label     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, key])
+  @@index([teamId])
+}
+
+model AnomalyRule {
+  id              String   @id @default(cuid())
+  teamId          String
+  metricId        String
+  standardDevs    Decimal  @default(2.0) @db.Decimal(6, 2)
+  lookbackSamples Int      @default(30)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  team   Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  metric Metric         @relation(fields: [metricId], references: [id], onDelete: Cascade)
+  alerts AnomalyAlert[]
+
+  @@index([teamId])
+  @@index([metricId])
+}
+
+model AnomalyAlert {
+  id          String      @id @default(cuid())
+  teamId      String
+  ruleId      String
+  metricId    String
+  value       Float
+  mean        Float
+  stddev      Float
+  timestamp   DateTime
+  status      AlertStatus @default(OPEN)
+  triggeredAt DateTime    @default(now())
+  resolvedAt  DateTime?   @updatedAt
+
+  team   Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  rule   AnomalyRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  metric Metric      @relation(fields: [metricId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, status])
+  // @@index([ruleId])
+  @@index([metricId, triggeredAt])
+}
