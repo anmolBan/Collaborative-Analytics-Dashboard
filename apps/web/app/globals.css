@@ -26,6 +26,96 @@ a {
   text-decoration: none;
 }
 
+.dashboard-layout {
+  min-height: 180px;
+}
+
+.dashboard-layout.editing {
+  border-radius: 0.5rem;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: calc((100% - 176px) / 12) 88px, calc((100% - 176px) / 12) 88px;
+}
+
+.dashboard-layout .react-grid-placeholder {
+  border: 1px solid rgba(94, 234, 212, 0.5);
+  border-radius: 0.5rem;
+  background: rgba(45, 212, 191, 0.18);
+}
+
+.dashboard-widget-shell {
+  min-width: 0;
+}
+
+.dashboard-widget-shell > div {
+  height: 100%;
+  overflow: hidden;
+}
+
+.dashboard-widget-card {
+  padding: var(--widget-padding);
+}
+
+.dashboard-widget-eyebrow {
+  font-size: var(--widget-eyebrow-size);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-widget-title {
+  display: -webkit-box;
+  margin-top: var(--widget-title-gap);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--widget-title-lines);
+  font-size: var(--widget-title-size);
+  line-height: 1.08;
+}
+
+.dashboard-widget-body {
+  margin-top: var(--widget-body-gap);
+  min-height: 0;
+}
+
+.dashboard-widget-value {
+  font-size: var(--widget-value-size);
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-widget-secondary {
+  font-size: var(--widget-secondary-size);
+  line-height: 1.25;
+}
+
+.dashboard-widget-caption {
+  font-size: calc(var(--widget-secondary-size) * 0.82);
+  line-height: 1.2;
+}
+
+.dashboard-widget-drag-handle {
+  cursor: default;
+}
+
+.dashboard-layout.editing .dashboard-widget-drag-handle {
+  cursor: grab;
+}
+
+.dashboard-layout.editing .react-draggable-dragging .dashboard-widget-drag-handle {
+  cursor: grabbing;
+}
+
+.dashboard-layout .react-resizable-handle::after {
+  border-color: rgba(94, 234, 212, 0.9);
+}
+
+.dashboard-layout .react-resizable-handle {
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.86);
+}
+
 .imgDark {
   display: none;
 }

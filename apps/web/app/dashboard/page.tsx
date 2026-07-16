@@ -114,9 +114,12 @@ export default async function Dashboard() {
 
           <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
             <WidgetGrid
+              activeRules={team.activeRules}
+              alerts={team.alerts}
               dashboard={activeDashboard}
               kpis={team.kpis}
               metrics={team.metrics}
+              role={team.role}
             />
 
             <section className="grid gap-6">

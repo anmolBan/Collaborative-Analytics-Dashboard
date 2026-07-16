@@ -26,6 +26,8 @@ export type DashboardWidget = {
   id: string;
   type: string;
   position: number;
+  x: number;
+  y: number;
   width: number;
   height: number;
   config: {
@@ -245,6 +247,8 @@ export default async function getDashboardData(
         id: widget.id,
         type: widget.type,
         position: widget.position,
+        x: widget.x,
+        y: widget.y,
         width: widget.width,
         height: widget.height,
         config: readWidgetConfig(widget.config),

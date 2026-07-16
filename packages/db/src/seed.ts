@@ -5,6 +5,145 @@ import { KpiKey, MetricKey, Role, WidgetType } from "../generated/prisma/enums.j
 
 const passwordHash = await bcrypt.hash("Password123!", 10);
 
+type MetricSeed = {
+  key: MetricKey;
+  label: string;
+  unit: string;
+  value: number;
+};
+
+async function seedTeamAnalytics({
+  anomalyMetricIndex,
+  dashboardName,
+  dashboardSlug,
+  metrics,
+  teamId,
+}: {
+  anomalyMetricIndex: number;
+  dashboardName: string;
+  dashboardSlug: string;
+  metrics: MetricSeed[];
+  teamId: string;
+}) {
+  const seededMetrics = await Promise.all(
+    metrics.map((metric) =>
+      prisma.metric.upsert({
+        where: { teamId_key: { teamId, key: metric.key } },
+        update: { value: metric.value, label: metric.label, unit: metric.unit },
+        create: {
+          teamId,
+          key: metric.key,
+          label: metric.label,
+          value: metric.value,
+          unit: metric.unit,
+        },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    seededMetrics.map((metric) =>
+      prisma.metricSample.create({
+        data: {
+          metricId: metric.id,
+          value: metric.value.toNumber(),
+          timestamp: new Date(),
+        },
+      }),
+    ),
+  );
+
+  await Promise.all([
+    prisma.kpiDefinition.upsert({
+      where: { teamId_key: { teamId, key: KpiKey.ARPU } },
+      update: {},
+      create: {
+        teamId,
+        key: KpiKey.ARPU,
+        label: "ARPU",
+      },
+    }),
+    prisma.kpiDefinition.upsert({
+      where: { teamId_key: { teamId, key: KpiKey.ERROR_RATE } },
+      update: {},
+      create: {
+        teamId,
+        key: KpiKey.ERROR_RATE,
+        label: "Error Rate",
+      },
+    }),
+  ]);
+
+  const dashboard = await prisma.dashboard.upsert({
+    where: { slug: dashboardSlug },
+    update: { name: dashboardName, teamId },
+    create: {
+      name: dashboardName,
+      slug: dashboardSlug,
+      teamId,
+    },
+  });
+
+  await prisma.dashboardWidget.deleteMany({
+    where: { dashboardId: dashboard.id },
+  });
+
+  await prisma.dashboardWidget.createMany({
+    data: [
+      {
+        dashboardId: dashboard.id,
+        type: WidgetType.METRIC_CARD,
+        position: 0,
+        config: { metricKey: MetricKey.REVENUE },
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 2,
+      },
+      {
+        dashboardId: dashboard.id,
+        type: WidgetType.METRIC_CHART,
+        position: 1,
+        config: { metricKey: MetricKey.PAGE_VIEWS },
+        x: 4,
+        y: 0,
+        width: 8,
+        height: 4,
+      },
+      {
+        dashboardId: dashboard.id,
+        type: WidgetType.KPI_CARD,
+        position: 2,
+        config: { kpiKey: KpiKey.ARPU },
+        x: 0,
+        y: 2,
+        width: 4,
+        height: 2,
+      },
+    ],
+  });
+
+  const anomalyMetric = seededMetrics[anomalyMetricIndex];
+
+  if (anomalyMetric) {
+    await prisma.anomalyRule.upsert({
+      where: { id: `${dashboardSlug}-anomaly-rule` },
+      update: {
+        teamId,
+        metricId: anomalyMetric.id,
+        enabled: true,
+      },
+      create: {
+        id: `${dashboardSlug}-anomaly-rule`,
+        teamId,
+        metricId: anomalyMetric.id,
+        standardDevs: 2,
+        lookbackSamples: 30,
+      },
+    });
+  }
+}
+
 const organization = await prisma.organization.upsert({
   where: { slug: "buildable-labs" },
   update: {},
@@ -119,162 +258,34 @@ await Promise.all([
   }),
 ]);
 
-const financeMetrics = await Promise.all([
-  prisma.metric.upsert({
-    where: { teamId_key: { teamId: financeTeam.id, key: MetricKey.PAGE_VIEWS } },
-    update: { value: 12480 },
-    create: {
-      teamId: financeTeam.id,
-      key: MetricKey.PAGE_VIEWS,
-      label: "Page Views",
-      value: 12480,
-      unit: "views",
-    },
-  }),
-  prisma.metric.upsert({
-    where: { teamId_key: { teamId: financeTeam.id, key: MetricKey.CLICKS } },
-    update: { value: 2430 },
-    create: {
-      teamId: financeTeam.id,
-      key: MetricKey.CLICKS,
-      label: "Clicks",
-      value: 2430,
-      unit: "clicks",
-    },
-  }),
-  prisma.metric.upsert({
-    where: { teamId_key: { teamId: financeTeam.id, key: MetricKey.ERRORS } },
-    update: { value: 18 },
-    create: {
-      teamId: financeTeam.id,
-      key: MetricKey.ERRORS,
-      label: "Errors",
-      value: 18,
-      unit: "errors",
-    },
-  }),
-  prisma.metric.upsert({
-    where: { teamId_key: { teamId: financeTeam.id, key: MetricKey.REVENUE } },
-    update: { value: 84200 },
-    create: {
-      teamId: financeTeam.id,
-      key: MetricKey.REVENUE,
-      label: "Revenue",
-      value: 84200,
-      unit: "usd",
-    },
-  }),
-  prisma.metric.upsert({
-    where: { teamId_key: { teamId: financeTeam.id, key: MetricKey.USERS } },
-    update: { value: 1320 },
-    create: {
-      teamId: financeTeam.id,
-      key: MetricKey.USERS,
-      label: "Users",
-      value: 1320,
-      unit: "users",
-    },
-  }),
-]);
-
-await Promise.all(
-  financeMetrics.map((metric) =>
-    prisma.metricSample.create({
-      data: {
-        metricId: metric.id,
-        value: metric.value.toNumber(),
-        timestamp: new Date(),
-      },
-    }),
-  ),
-);
-
-await Promise.all([
-  prisma.kpiDefinition.upsert({
-    where: { teamId_key: { teamId: financeTeam.id, key: KpiKey.ARPU } },
-    update: {},
-    create: {
-      teamId: financeTeam.id,
-      key: KpiKey.ARPU,
-      label: "ARPU",
-    },
-  }),
-  prisma.kpiDefinition.upsert({
-    where: { teamId_key: { teamId: financeTeam.id, key: KpiKey.ERROR_RATE } },
-    update: {},
-    create: {
-      teamId: financeTeam.id,
-      key: KpiKey.ERROR_RATE,
-      label: "Error Rate",
-    },
-  }),
-]);
-
-const dashboard = await prisma.dashboard.upsert({
-  where: { slug: "finance-overview" },
-  update: { name: "Finance Overview" },
-  create: {
-    name: "Finance Overview",
-    slug: "finance-overview",
-    teamId: financeTeam.id,
-  },
-});
-
-await prisma.dashboardWidget.deleteMany({
-  where: { dashboardId: dashboard.id },
-});
-
-await prisma.dashboardWidget.createMany({
-  data: [
-    {
-      dashboardId: dashboard.id,
-      type: WidgetType.METRIC_CARD,
-      position: 0,
-      config: { metricKey: MetricKey.REVENUE },
-      x: 0,
-      y: 0,
-      width: 4,
-      height: 2,
-    },
-    {
-      dashboardId: dashboard.id,
-      type: WidgetType.METRIC_CHART,
-      position: 1,
-      config: { metricKey: MetricKey.PAGE_VIEWS },
-      x: 4,
-      y: 0,
-      width: 8,
-      height: 4,
-    },
-    {
-      dashboardId: dashboard.id,
-      type: WidgetType.KPI_CARD,
-      position: 2,
-      config: { kpiKey: KpiKey.ARPU },
-      x: 0,
-      y: 2,
-      width: 4,
-      height: 2,
-    },
+await seedTeamAnalytics({
+  anomalyMetricIndex: 2,
+  dashboardName: "Finance Overview",
+  dashboardSlug: "finance-overview",
+  teamId: financeTeam.id,
+  metrics: [
+    { key: MetricKey.PAGE_VIEWS, label: "Page Views", value: 12480, unit: "views" },
+    { key: MetricKey.CLICKS, label: "Clicks", value: 2430, unit: "clicks" },
+    { key: MetricKey.ERRORS, label: "Errors", value: 18, unit: "errors" },
+    { key: MetricKey.REVENUE, label: "Revenue", value: 84200, unit: "usd" },
+    { key: MetricKey.USERS, label: "Users", value: 1320, unit: "users" },
   ],
 });
 
-await prisma.anomalyRule.upsert({
-  where: { id: "finance-errors-anomaly-rule" },
-  update: {
-    teamId: financeTeam.id,
-    metricId: financeMetrics[2].id,
-    enabled: true,
-  },
-  create: {
-    id: "finance-errors-anomaly-rule",
-    teamId: financeTeam.id,
-    metricId: financeMetrics[2].id,
-    standardDevs: 2,
-    lookbackSamples: 30,
-  },
+await seedTeamAnalytics({
+  anomalyMetricIndex: 2,
+  dashboardName: "Marketing Overview",
+  dashboardSlug: "marketing-overview",
+  teamId: marketingTeam.id,
+  metrics: [
+    { key: MetricKey.PAGE_VIEWS, label: "Page Views", value: 38640, unit: "views" },
+    { key: MetricKey.CLICKS, label: "Clicks", value: 6120, unit: "clicks" },
+    { key: MetricKey.ERRORS, label: "Errors", value: 7, unit: "errors" },
+    { key: MetricKey.REVENUE, label: "Attributed Revenue", value: 52750, unit: "usd" },
+    { key: MetricKey.USERS, label: "Visitors", value: 4180, unit: "users" },
+  ],
 });
 
 await prisma.$disconnect();
 
-console.log("Seeded demo organization, teams, users, dashboard, metrics, and anomaly rule.");
+console.log("Seeded demo organization, Finance and Marketing teams, users, dashboards, metrics, KPIs, and anomaly rules.");

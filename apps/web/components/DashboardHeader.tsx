@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LogoutButton from "./LogoutButton";
 
 type DashboardHeaderProps = {
   organizationName: string;
@@ -37,6 +38,7 @@ export default function DashboardHeader({
           <span className="rounded-lg border border-teal-200/20 bg-teal-300/10 px-3 py-2 text-xs font-extrabold text-teal-100">
             {role}
           </span>
+          <LogoutButton />
         </div>
       </div>
     </header>
