@@ -15,6 +15,7 @@ import type {
   DashboardMetric,
   DashboardWidget,
 } from "../app/dashboard/action";
+import { saveDashboardLayout } from "../app/dashboard/saveLayoutAction";
 
 type WidgetGridProps = {
   activeRules: number;
@@ -37,6 +38,17 @@ type AddOption = {
 };
 
 type WidgetTextStyle = CSSProperties & Record<`--${string}`, string>;
+
+type DashboardLayoutSaveWidget = {
+  config: DashboardWidget["config"];
+  height: number;
+  id: string;
+  position: number;
+  type: string;
+  width: number;
+  x: number;
+  y: number;
+};
 
 const EDITABLE_ROLES = new Set(["ADMIN", "EDITOR"]);
 const BREAKPOINTS: Record<Breakpoint, number> = {
@@ -390,6 +402,8 @@ export default function WidgetGrid({
     useState<ResponsiveLayouts<Breakpoint>>(initialLayouts);
   const [isEditing, setIsEditing] = useState(false);
   const [currentBreakpoint, setCurrentBreakpoint] = useState<Breakpoint>("lg");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
   const [selectedOption, setSelectedOption] = useState(
     addOptions[0]?.value ?? "",
   );
@@ -421,11 +435,13 @@ export default function WidgetGrid({
     };
 
     setDraftCounter((current) => current + 1);
+    setSaveMessage("");
     setWidgets((current) => [...current, widget]);
     setLayouts((current) => appendLayoutItem(current, widget));
   }
 
   function removeWidget(widgetId: string) {
+    setSaveMessage("");
     setWidgets((current) =>
       current.filter((widget) => widget.id !== widgetId),
     );
@@ -438,8 +454,57 @@ export default function WidgetGrid({
     setIsEditing(false);
   }
 
-  function doneClickHandler(){
-    setIsEditing(false);
+  function getWidgetsForSave() {
+    const itemById = new Map(currentLayout.map((item) => [item.i, item]));
+
+    return widgets
+      .map<DashboardLayoutSaveWidget>((widget, index) => {
+        const item = itemById.get(widget.id);
+
+        return {
+          config: widget.config,
+          height: Math.max(Math.round(item?.h ?? widget.height), 1),
+          id: widget.id,
+          position: index,
+          type: widget.type,
+          width: Math.max(Math.round(item?.w ?? widget.width), 1),
+          x: Math.max(Math.round(item?.x ?? widget.x), 0),
+          y: Math.max(Math.round(item?.y ?? widget.y), 0),
+        };
+      })
+      .sort((left, right) => left.y - right.y || left.x - right.x)
+      .map((widget, index) => ({
+        ...widget,
+        position: index,
+      }));
+  }
+
+  async function doneClickHandler() {
+    if (!dashboard) {
+      return;
+    }
+
+    const widgetsForSave = getWidgetsForSave();
+
+    setIsSaving(true);
+    setSaveMessage("");
+
+    try {
+      await saveDashboardLayout({
+        dashboardId: dashboard.id,
+        widgets: widgetsForSave,
+      });
+
+      setWidgets(widgetsForSave);
+      setIsEditing(false);
+      setSaveMessage("Saved");
+    } catch (error) {
+      setSaveMessage(
+        error instanceof Error ? error.message : "Could not save layout.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -464,23 +529,36 @@ export default function WidgetGrid({
                   Reset
                 </button>
                 <button
-                  className="dashboard-editor-control inline-flex h-10 items-center justify-center rounded-lg bg-teal-300 px-4 text-xs font-extrabold text-[#041010] transition hover:bg-amber-400"
+                  className="dashboard-editor-control inline-flex h-10 items-center justify-center rounded-lg bg-teal-300 px-4 text-xs font-extrabold text-[#041010] transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
+                  disabled={isSaving || !dashboard}
                   onClick={doneClickHandler}
                   type="button"
                 >
-                  Done
+                  {isSaving ? "Saving" : "Done"}
                 </button>
               </>
             ) : (
               <button
                 aria-label="Edit dashboard widgets"
                 className="inline-flex h-11 items-center justify-center rounded-lg bg-teal-300 px-4 text-sm font-extrabold text-[#041010] transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:ring-offset-2 focus:ring-offset-[#0d1316]"
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  setSaveMessage("");
+                  setIsEditing(true);
+                }}
                 type="button"
               >
                 Edit
               </button>
             )}
+            {saveMessage ? (
+              <span
+                className={`text-xs font-bold ${
+                  saveMessage === "Saved" ? "text-teal-200" : "text-rose-200"
+                }`}
+              >
+                {saveMessage}
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>
