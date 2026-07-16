@@ -39,5 +39,11 @@ export const dashboardPatchMessageSchema = z.object({
   }),
 });
 
+export const UserSigninSchema = z.object({
+  email: z.string(),
+  password: z.string().min(8),
+});
+
 export type Role = z.infer<typeof roleSchema>;
 export type DashboardPatchMessage = z.infer<typeof dashboardPatchMessageSchema>;
+export type UserSignin = z.infer<typeof UserSigninSchema>;
