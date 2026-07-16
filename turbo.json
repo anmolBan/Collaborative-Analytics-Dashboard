@@ -1,12 +1,19 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalEnv": ["WEBSOCKET_PORT"],
+  "globalEnv": ["DATABASE_URL", "NODE_ENV", "WEBSOCKET_PORT"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "!.next/dev/**",
+        "dist/**",
+        "generated/**",
+        "tsconfig.tsbuildinfo"
+      ]
     },
     "lint": {
       "dependsOn": ["^lint"]

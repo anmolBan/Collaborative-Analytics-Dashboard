@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "lint": "eslint --max-warnings 0",
     "build": "tsc -b",
+    "check-types": "tsc --noEmit",
     "start": "npm run build && node dist/index.js"
   },
   "keywords": [],
