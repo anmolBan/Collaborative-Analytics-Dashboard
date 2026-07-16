@@ -1,4 +1,6 @@
+import { getServerSession } from "next-auth";
 import Link from "next/link";
+import { authOptions } from "../lib/authOptions";
 
 const metrics = [
   { label: "Revenue", value: "$84.2k", delta: "+12.8%", color: "text-teal-200" },
@@ -162,7 +164,10 @@ function DashboardScene() {
   );
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await getServerSession(authOptions);
+  const isLoggedIn = Boolean(session);
+
   return (
     <main className="min-h-screen bg-[#070a0d] text-slate-100">
       <section className="relative min-h-[88svh] overflow-hidden border-b border-slate-500/15">
@@ -185,20 +190,29 @@ export default function HomePage() {
             <a href="#security">Security</a>
           </nav>
 
-          <div className="flex items-center gap-3">
+          {isLoggedIn ? (
             <Link
-              href="/signin"
-              className="hidden text-sm font-bold text-slate-300 transition hover:text-white sm:inline"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/signup"
+              href="/dashboard"
               className="rounded-lg bg-teal-300 px-4 py-2.5 text-sm font-extrabold text-[#041010] transition hover:bg-amber-400"
             >
-              Start
+              Dashboard
             </Link>
-          </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <Link
+                href="/signin"
+                className="hidden text-sm font-bold text-slate-300 transition hover:text-white sm:inline"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/signup"
+                className="rounded-lg bg-teal-300 px-4 py-2.5 text-sm font-extrabold text-[#041010] transition hover:bg-amber-400"
+              >
+                Start
+              </Link>
+            </div>
+          )}
         </header>
 
         <div className="relative z-10 mx-auto flex min-h-[calc(88svh-82px)] max-w-7xl items-center px-5 pb-40 pt-16 sm:px-8 md:pb-20">

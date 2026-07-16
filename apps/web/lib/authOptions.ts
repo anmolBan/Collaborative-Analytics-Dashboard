@@ -13,6 +13,15 @@ declare module "next-auth" {
         email: string;
         accessToken: string;
     }
+
+    interface Session {
+        user: {
+            id: string;
+            name: string;
+            email: string;
+            accessToken: string;
+        };
+    }
 }
 
 export const authOptions: NextAuthOptions = {
@@ -84,5 +93,29 @@ export const authOptions: NextAuthOptions = {
                 }
             }
         })
-    ]
+    ],
+
+    callbacks: {
+        async jwt({ token, user }){
+            if(user){
+                token.id = user.id;
+                token.name = user.name;
+                token.email = user.email;
+                token.accessToken = user.accessToken;
+            }
+            return token;
+        },
+
+        async session({ session, token }){
+            if(token){
+                session.user = {
+                    id: token.id as string,
+                    email: token.email as string,
+                    name: token.name as string,
+                    accessToken: token.accessToken as string
+                }
+            }
+            return session;
+        }
+    }
 }
