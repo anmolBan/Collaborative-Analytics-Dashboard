@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -10,6 +11,21 @@ import TeamAccessPanel from "../../components/TeamAccessPanel";
 import WidgetGrid from "../../components/WidgetGrid";
 import { authOptions } from "../../lib/authOptions";
 import getDashboardData from "./action";
+
+const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
+
+function createCollaborationToken(user: { id: string; name: string }) {
+  return jwt.sign(
+    {
+      name: user.name,
+      userId: user.id,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: "1h",
+    },
+  );
+}
 
 export default async function Dashboard() {
   const session = await getServerSession(authOptions);
@@ -47,6 +63,18 @@ export default async function Dashboard() {
   }
 
   const activeDashboard = team.dashboards[0] ?? null;
+  const websocketUrl =
+    process.env.WEBSOCKET_URL ??
+    process.env.NEXT_PUBLIC_WEBSOCKET_URL ??
+    "ws://localhost:8080";
+  const collaboration = activeDashboard
+    ? {
+        dashboardId: activeDashboard.id,
+        roomId: `dashboard:${activeDashboard.id}`,
+        token: createCollaborationToken(session.user),
+        websocketUrl,
+      }
+    : null;
   const revenueMetric = team.metrics.find((metric) => metric.key === "REVENUE");
   const usersMetric = team.metrics.find((metric) => metric.key === "USERS");
   const errorMetric = team.metrics.find((metric) => metric.key === "ERRORS");
@@ -120,6 +148,7 @@ export default async function Dashboard() {
               kpis={team.kpis}
               metrics={team.metrics}
               role={team.role}
+              collaboration={collaboration}
             />
 
             <section className="grid gap-6">

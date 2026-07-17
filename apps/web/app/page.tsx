@@ -166,6 +166,7 @@ function DashboardScene() {
 
 export default async function HomePage() {
   const session = await getServerSession(authOptions);
+  console.log(session);
   const isLoggedIn = Boolean(session);
 
   return (

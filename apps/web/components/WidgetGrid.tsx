@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type CSSProperties,
+} from "react";
+import { useRouter } from "next/navigation";
 import {
   Responsive,
   useContainerWidth,
@@ -20,6 +28,7 @@ import { saveDashboardLayout } from "../app/dashboard/saveLayoutAction";
 type WidgetGridProps = {
   activeRules: number;
   alerts: DashboardAlert[];
+  collaboration: DashboardCollaboration | null;
   dashboard: DashboardBoard | null;
   kpis: DashboardKpi[];
   metrics: DashboardMetric[];
@@ -48,6 +57,35 @@ type DashboardLayoutSaveWidget = {
   width: number;
   x: number;
   y: number;
+};
+
+type DashboardCollaboration = {
+  dashboardId: string;
+  roomId: string;
+  token: string;
+  websocketUrl: string;
+};
+
+type RealtimeUser = {
+  name: string;
+  userId: string;
+};
+
+type ConnectionStatus = "connected" | "connecting" | "offline";
+
+type RealtimeServerMessage = {
+  content?: unknown;
+  name?: unknown;
+  payload?: unknown;
+  type?: unknown;
+  users?: unknown;
+};
+
+type LayoutSavedContent = {
+  dashboardId?: unknown;
+  event?: unknown;
+  revision?: unknown;
+  updatedAt?: unknown;
 };
 
 const EDITABLE_ROLES = new Set(["ADMIN", "EDITOR"]);
@@ -121,7 +159,9 @@ function toLayoutItem(
   };
 }
 
-function createLayouts(widgets: DashboardWidget[]): ResponsiveLayouts<Breakpoint> {
+function createLayouts(
+  widgets: DashboardWidget[],
+): ResponsiveLayouts<Breakpoint> {
   return BREAKPOINT_ORDER.reduce<ResponsiveLayouts<Breakpoint>>(
     (layouts, breakpoint) => {
       const cols = COLS[breakpoint];
@@ -181,7 +221,53 @@ function removeLayoutItem(
   );
 }
 
-function getWidgetTextStyle(layoutItem: LayoutItem | undefined): WidgetTextStyle {
+function getRealtimeUsers(value: unknown): RealtimeUser[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (user): user is RealtimeUser =>
+      typeof user === "object" &&
+      user !== null &&
+      typeof (user as RealtimeUser).userId === "string" &&
+      typeof (user as RealtimeUser).name === "string",
+  );
+}
+
+function readRealtimeMessage(value: string): RealtimeServerMessage | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+
+    if (typeof parsed !== "object" || parsed === null) {
+      return null;
+    }
+
+    return parsed as RealtimeServerMessage;
+  } catch {
+    return null;
+  }
+}
+
+function getMessagePayload(message: RealtimeServerMessage) {
+  return typeof message.payload === "object" && message.payload !== null
+    ? (message.payload as Record<string, unknown>)
+    : null;
+}
+
+function getLayoutSavedContent(value: unknown): LayoutSavedContent | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const content = value as LayoutSavedContent;
+
+  return content.event === "layout-saved" ? content : null;
+}
+
+function getWidgetTextStyle(
+  layoutItem: LayoutItem | undefined,
+): WidgetTextStyle {
   const width = layoutItem?.w ?? 4;
   const height = layoutItem?.h ?? 2;
   const isNarrow = width <= 3;
@@ -190,19 +276,36 @@ function getWidgetTextStyle(layoutItem: LayoutItem | undefined): WidgetTextStyle
 
   return {
     "--widget-body-gap": isTiny ? "0.35rem" : isShort ? "0.5rem" : "0.75rem",
-    "--widget-eyebrow-size": isTiny ? "0.62rem" : isNarrow ? "0.68rem" : "0.75rem",
+    "--widget-eyebrow-size": isTiny
+      ? "0.62rem"
+      : isNarrow
+        ? "0.68rem"
+        : "0.75rem",
     "--widget-padding": isTiny ? "0.65rem" : isShort ? "0.8rem" : "1rem",
-    "--widget-secondary-size": isTiny ? "0.68rem" : isNarrow ? "0.74rem" : "0.875rem",
+    "--widget-secondary-size": isTiny
+      ? "0.68rem"
+      : isNarrow
+        ? "0.74rem"
+        : "0.875rem",
     "--widget-title-gap": isTiny ? "0.55rem" : isShort ? "0.75rem" : "1.25rem",
     "--widget-title-lines": isShort ? "1" : "2",
-    "--widget-title-size": isTiny ? "0.95rem" : isNarrow ? "1.05rem" : "1.25rem",
-    "--widget-value-size": isTiny ? "1.25rem" : isNarrow ? "1.55rem" : "1.875rem",
+    "--widget-title-size": isTiny
+      ? "0.95rem"
+      : isNarrow
+        ? "1.05rem"
+        : "1.25rem",
+    "--widget-value-size": isTiny
+      ? "1.25rem"
+      : isNarrow
+        ? "1.55rem"
+        : "1.875rem",
   };
 }
 
 function WidgetChart({ metric }: { metric?: DashboardMetric }) {
   const samples = metric?.samples ?? [];
-  const values = samples.length > 0 ? samples.map((sample) => sample.value) : [];
+  const values =
+    samples.length > 0 ? samples.map((sample) => sample.value) : [];
   const max = Math.max(...values, metric?.value ?? 1, 1);
 
   return (
@@ -346,11 +449,13 @@ function WidgetBody({
 export default function WidgetGrid({
   activeRules,
   alerts,
+  collaboration,
   dashboard,
   kpis,
   metrics,
   role,
 }: WidgetGridProps) {
+  const router = useRouter();
   const canEdit = EDITABLE_ROLES.has(role);
   const initialWidgets = useMemo(
     () => dashboard?.widgets ?? [],
@@ -404,10 +509,15 @@ export default function WidgetGrid({
   const [currentBreakpoint, setCurrentBreakpoint] = useState<Breakpoint>("lg");
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>("offline");
+  const [realtimeUsers, setRealtimeUsers] = useState<RealtimeUser[]>([]);
   const [selectedOption, setSelectedOption] = useState(
     addOptions[0]?.value ?? "",
   );
   const [draftCounter, setDraftCounter] = useState(1);
+  const [isRefreshing, startRefreshTransition] = useTransition();
+  const socketRef = useRef<WebSocket | null>(null);
   const { containerRef, mounted, width } = useContainerWidth({
     initialWidth: 900,
     measureBeforeMount: true,
@@ -417,6 +527,152 @@ export default function WidgetGrid({
     addOptions.find((option) => option.value === selectedOption) ??
     addOptions[0];
   const currentLayout = layouts[currentBreakpoint] ?? layouts.lg ?? [];
+  const connectionLabel =
+    connectionStatus === "connected"
+      ? "Live"
+      : connectionStatus === "connecting"
+        ? "Connecting"
+        : "Offline";
+
+  useEffect(() => {
+    if (isEditing) {
+      return;
+    }
+
+    setWidgets(initialWidgets);
+    setLayouts(initialLayouts);
+  }, [initialLayouts, initialWidgets, isEditing]);
+
+  useEffect(() => {
+    if (!collaboration) {
+      return;
+    }
+
+    const realtimeConfig = collaboration;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let isCancelled = false;
+
+    function connect() {
+      if (realtimeConfig.token.length === 0) {
+        setConnectionStatus("offline");
+        return;
+      }
+
+      setConnectionStatus("connecting");
+
+      const url = new URL(realtimeConfig.websocketUrl);
+      url.searchParams.set("token", realtimeConfig.token);
+
+      const socket = new WebSocket(url);
+      socketRef.current = socket;
+
+      socket.addEventListener("open", () => {
+        socket.send(
+          JSON.stringify({
+            action: "join",
+            roomId: realtimeConfig.roomId,
+          }),
+        );
+      });
+
+      socket.addEventListener("message", (event) => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+
+        const message = readRealtimeMessage(event.data);
+
+        if (!message || typeof message.type !== "string") {
+          return;
+        }
+
+        const payload = getMessagePayload(message);
+
+        if (message.type === "connection:ready") {
+          setConnectionStatus("connected");
+          return;
+        }
+
+        if (message.type === "room:joined") {
+          setConnectionStatus("connected");
+          setRealtimeUsers(getRealtimeUsers(payload?.users));
+          return;
+        }
+
+        if (message.type === "user-joined" || message.type === "user-left") {
+          setRealtimeUsers(getRealtimeUsers(message.users));
+          return;
+        }
+
+        if (message.type === "canvas-update") {
+          const content = getLayoutSavedContent(message.content);
+
+          if (content?.dashboardId !== realtimeConfig.dashboardId) {
+            return;
+          }
+
+          startRefreshTransition(() => {
+            router.refresh();
+          });
+        }
+      });
+
+      socket.addEventListener("close", (event) => {
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        setConnectionStatus("offline");
+
+        if (event.code === 1008) {
+          return;
+        }
+
+        reconnectTimer = setTimeout(connect, 2500);
+      });
+
+      socket.addEventListener("error", () => {
+        setConnectionStatus("offline");
+      });
+    }
+
+    connect();
+
+    return () => {
+      isCancelled = true;
+
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+
+      socketRef.current?.close();
+      socketRef.current = null;
+    };
+  }, [collaboration, router]);
+
+  function broadcastLayoutSaved(revision: number, updatedAt: string) {
+    const socket = socketRef.current;
+
+    if (!collaboration || !socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        action: "canvas-update",
+        content: {
+          dashboardId: collaboration.dashboardId,
+          event: "layout-saved",
+          revision,
+          updatedAt,
+        },
+      }),
+    );
+  }
 
   function addWidget() {
     if (!selectedAddOption) {
@@ -442,9 +698,7 @@ export default function WidgetGrid({
 
   function removeWidget(widgetId: string) {
     setSaveMessage("");
-    setWidgets((current) =>
-      current.filter((widget) => widget.id !== widgetId),
-    );
+    setWidgets((current) => current.filter((widget) => widget.id !== widgetId));
     setLayouts((current) => removeLayoutItem(current, widgetId));
   }
 
@@ -490,7 +744,7 @@ export default function WidgetGrid({
     setSaveMessage("");
 
     try {
-      await saveDashboardLayout({
+      const result = await saveDashboardLayout({
         dashboardId: dashboard.id,
         widgets: widgetsForSave,
       });
@@ -498,6 +752,7 @@ export default function WidgetGrid({
       setWidgets(widgetsForSave);
       setIsEditing(false);
       setSaveMessage("Saved");
+      broadcastLayoutSaved(result.revision, result.updatedAt);
     } catch (error) {
       setSaveMessage(
         error instanceof Error ? error.message : "Could not save layout.",
@@ -514,7 +769,25 @@ export default function WidgetGrid({
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-slate-500">
             Dashboard layout
           </p>
-          <h2 className="mt-2 text-2xl font-black text-slate-50">Widgets</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h2 className="text-2xl font-black text-slate-50">Widgets</h2>
+            {collaboration ? (
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    connectionStatus === "connected"
+                      ? "bg-teal-300"
+                      : connectionStatus === "connecting"
+                        ? "bg-amber-300"
+                        : "bg-slate-600"
+                  }`}
+                />
+                <span>{connectionLabel}</span>
+                <span className="text-slate-600">/</span>
+                <span>{realtimeUsers.length} online</span>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {canEdit ? (
@@ -563,6 +836,12 @@ export default function WidgetGrid({
         ) : null}
       </div>
 
+      {isRefreshing ? (
+        <div className="mt-5 rounded-lg border border-amber-200/20 bg-amber-300/10 p-3 text-sm font-extrabold text-amber-50">
+          Updating dashboard layout...
+        </div>
+      ) : null}
+
       {isEditing ? (
         <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-500/15 bg-slate-950/40 p-3 sm:flex-row">
           <select
@@ -590,7 +869,9 @@ export default function WidgetGrid({
         {mounted ? (
           <Responsive
             breakpoints={BREAKPOINTS}
-            className={isEditing ? "dashboard-layout editing" : "dashboard-layout"}
+            className={
+              isEditing ? "dashboard-layout editing" : "dashboard-layout"
+            }
             cols={COLS}
             dragConfig={{
               cancel: ".dashboard-editor-control",

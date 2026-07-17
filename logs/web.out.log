@@ -1,0 +1,10 @@
+▲ Next.js 16.2.0 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.31.141:3000
+- Environments: .env
+✓ Ready in 559ms
+Creating turbopack project {
+  dir: 'G:\\Collaborative-Analytics-Dashboard\\apps\\web',
+  testMode: true
+}
+
